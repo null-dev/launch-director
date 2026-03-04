@@ -16,6 +16,14 @@ use serde_json::Value;
 use tempfile::tempfile;
 
 fn main() {
+    // If the application is launched from a GUI, the TERM env var may not be set
+    // causing the programs we run to not output color.
+    // So we set it ourselves in this case
+    if std::env::var_os("TERM").is_none() {
+        unsafe {
+            std::env::set_var("TERM", "xterm-256color");
+        }
+    }
     if let Err(err) = run() {
         println!("{err:?}");
         if !should_suppress_error_dialog(&err) {
