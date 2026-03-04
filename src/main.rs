@@ -9,16 +9,24 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clap::Parser;
+use clap::{Parser, error::ErrorKind};
 use color_eyre::eyre::{Context, Result, bail, eyre};
 use eframe::egui::{self, Color32, RichText};
 use serde_json::Value;
 use tempfile::NamedTempFile;
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(err) = run() {
+        println!("{err:?}");
+        show_error_dialog(&err.to_string());
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     color_eyre::install()?;
 
-    let args = CliArgs::parse();
+    let args = parse_args()?;
     ensure_required_tasks(&args.project)?;
     let project_name = project_display_name(&args.project);
 
@@ -41,6 +49,62 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn show_error_dialog(message: &str) {
+    let title = "Launch Director - Error";
+    let app = ErrorDialogApp::new(message.to_string());
+    let _ = eframe::run_native(
+        title,
+        eframe::NativeOptions::default(),
+        Box::new(|_cc| Ok(Box::new(app))),
+    );
+}
+
+fn parse_args() -> Result<CliArgs> {
+    match CliArgs::try_parse() {
+        Ok(args) => Ok(args),
+        Err(err) => match err.kind() {
+            ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                println!("{err}");
+                std::process::exit(0);
+            }
+            _ => bail!("{err}"),
+        },
+    }
+}
+
+struct ErrorDialogApp {
+    message: String,
+}
+
+impl ErrorDialogApp {
+    fn new(message: String) -> Self {
+        Self { message }
+    }
+}
+
+impl eframe::App for ErrorDialogApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.label(RichText::new("Launch Director encountered an error:").strong());
+            ui.separator();
+
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.message)
+                        .font(egui::TextStyle::Monospace)
+                        .desired_width(f32::INFINITY)
+                        .interactive(false),
+                );
+            });
+
+            ui.separator();
+            if ui.button("Close").clicked() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        });
+    }
 }
 
 /// Launch and monitor locally developed programs via project-defined `mise` tasks.
