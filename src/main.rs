@@ -46,10 +46,10 @@ fn run() -> Result<()> {
             quick_failure.exit_code,
             &quick_failure.output,
         )?;
-        bail!(
-            "Run task exited with non-zero code {} within 2 seconds.",
-            quick_failure.exit_code
-        );
+        return Err(QuickRunTaskFailed {
+            exit_code: quick_failure.exit_code,
+        }
+        .into());
     }
 
     Ok(())
@@ -68,8 +68,26 @@ impl fmt::Display for BuildTaskFailed {
 
 impl std::error::Error for BuildTaskFailed {}
 
+#[derive(Debug)]
+struct QuickRunTaskFailed {
+    exit_code: i32,
+}
+
+impl fmt::Display for QuickRunTaskFailed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Run task exited with non-zero code {} within 2 seconds.",
+            self.exit_code
+        )
+    }
+}
+
+impl std::error::Error for QuickRunTaskFailed {}
+
 fn should_suppress_error_dialog(err: &color_eyre::Report) -> bool {
     err.downcast_ref::<BuildTaskFailed>().is_some()
+        || err.downcast_ref::<QuickRunTaskFailed>().is_some()
 }
 
 fn show_error_dialog(message: &str) {
