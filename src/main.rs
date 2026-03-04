@@ -1,10 +1,10 @@
 use std::collections::HashSet;
+use std::fmt;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -12,13 +12,16 @@ use std::time::{Duration, Instant};
 use clap::{Parser, error::ErrorKind};
 use color_eyre::eyre::{Context, Result, bail, eyre};
 use eframe::egui::{self, Color32, RichText};
+use egui_term::{BackendCommand, BackendSettings, PtyEvent, TerminalBackend, TerminalView};
 use serde_json::Value;
 use tempfile::NamedTempFile;
 
 fn main() {
     if let Err(err) = run() {
         println!("{err:?}");
-        show_error_dialog(&err.to_string());
+        if !should_suppress_error_dialog(&err) {
+            show_error_dialog(&err.to_string());
+        }
         std::process::exit(1);
     }
 }
@@ -32,8 +35,8 @@ fn run() -> Result<()> {
 
     match run_build_window(&args.project, &project_name, &tasks.build_task)? {
         BuildOutcome::Succeeded => {}
-        BuildOutcome::Failed(code) => bail!("Build task failed with exit code {code}."),
-        BuildOutcome::Aborted => bail!("Build window was closed before the build finished."),
+        BuildOutcome::Failed(code) => return Err(BuildTaskFailed { exit_code: code }.into()),
+        BuildOutcome::Aborted => bail!("Build cancelled."),
     }
 
     if let Some(quick_failure) =
@@ -51,6 +54,23 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct BuildTaskFailed {
+    exit_code: i32,
+}
+
+impl fmt::Display for BuildTaskFailed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Build task failed with exit code {}.", self.exit_code)
+    }
+}
+
+impl std::error::Error for BuildTaskFailed {}
+
+fn should_suppress_error_dialog(err: &color_eyre::Report) -> bool {
+    err.downcast_ref::<BuildTaskFailed>().is_some()
 }
 
 fn show_error_dialog(message: &str) {
@@ -255,26 +275,28 @@ enum BuildOutcome {
 }
 
 fn run_build_window(project: &Path, project_name: &str, build_task: &str) -> Result<BuildOutcome> {
-    let mut process = RunningProcess::spawn(project, build_task)?;
-    let mut initial_output = String::new();
+    let session = BuildTerminalSession::start(project.to_path_buf(), build_task.to_string())?;
     let start = Instant::now();
-
+    let mut pre_ui_failure_code = None;
     loop {
-        process.drain_output(&mut initial_output);
-
-        if let Some(status) = process
-            .child
-            .try_wait()
-            .wrap_err_with(|| format!("Failed while waiting for `{build_task}`"))?
-        {
-            return if status.success() {
-                Ok(BuildOutcome::Succeeded)
-            } else {
-                Ok(BuildOutcome::Failed(exit_code(status)))
-            };
+        while let Ok((_, event)) = session.pty_event_rx.try_recv() {
+            match event {
+                PtyEvent::ChildExit(code) => {
+                    if code == 0 {
+                        return Ok(BuildOutcome::Succeeded);
+                    }
+                    pre_ui_failure_code = Some(code);
+                    break;
+                }
+                PtyEvent::Exit => {
+                    pre_ui_failure_code = Some(-1);
+                    break;
+                }
+                _ => {}
+            }
         }
 
-        if start.elapsed() >= Duration::from_secs(2) {
+        if pre_ui_failure_code.is_some() || start.elapsed() >= Duration::from_secs(2) {
             break;
         }
 
@@ -283,17 +305,23 @@ fn run_build_window(project: &Path, project_name: &str, build_task: &str) -> Res
 
     let result = Arc::new(Mutex::new(None));
     let result_for_ui = Arc::clone(&result);
-    let app = BuildWindowApp::new(
-        project_name.to_string(),
-        initial_output,
-        process,
-        result_for_ui,
-    );
+    let project_name_for_app = project_name.to_string();
     let title = format!("Launch Director - {project_name} - Build");
 
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native(&title, native_options, Box::new(|_cc| Ok(Box::new(app))))
-        .map_err(|err| eyre!("Failed to open build output window: {err}"))?;
+    eframe::run_native(
+        &title,
+        native_options,
+        Box::new(move |_cc| {
+            Ok(Box::new(BuildWindowApp::new(
+                project_name_for_app,
+                session,
+                pre_ui_failure_code,
+                result_for_ui,
+            )))
+        }),
+    )
+    .map_err(|err| eyre!("Failed to open build output window: {err}"))?;
 
     let final_result = result
         .lock()
@@ -370,87 +398,65 @@ fn exit_code(status: ExitStatus) -> i32 {
     status.code().unwrap_or(-1)
 }
 
-struct RunningProcess {
-    child: Child,
-    output_rx: Receiver<String>,
+struct BuildTerminalSession {
+    terminal_backend: TerminalBackend,
+    pty_event_rx: Receiver<(u64, PtyEvent)>,
 }
 
-impl RunningProcess {
-    fn spawn(project: &Path, task: &str) -> Result<Self> {
-        let mut child = Command::new("mise")
-            .arg("run")
-            .arg(task)
-            .current_dir(project)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .wrap_err_with(|| format!("Failed to start `{task}` task"))?;
-
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| eyre!("Failed to capture stdout for spawned task"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| eyre!("Failed to capture stderr for spawned task"))?;
-
-        let (tx, rx) = mpsc::channel();
-        spawn_reader(stdout, tx.clone());
-        spawn_reader(stderr, tx);
+impl BuildTerminalSession {
+    fn start(project: PathBuf, build_task: String) -> Result<Self> {
+        let (pty_event_tx, pty_event_rx) = mpsc::channel();
+        let terminal_backend = TerminalBackend::new(
+            0,
+            egui::Context::default(),
+            pty_event_tx,
+            BackendSettings {
+                shell: "mise".to_string(),
+                args: vec!["run".to_string(), build_task],
+                working_directory: Some(project),
+            },
+        )
+        .wrap_err("Failed to start build task in terminal backend")?;
 
         Ok(Self {
-            child,
-            output_rx: rx,
+            terminal_backend,
+            pty_event_rx,
         })
     }
-
-    fn drain_output(&mut self, output: &mut String) {
-        while let Ok(chunk) = self.output_rx.try_recv() {
-            output.push_str(&chunk);
-        }
-    }
-}
-
-fn spawn_reader<R: Read + Send + 'static>(reader: R, tx: Sender<String>) {
-    thread::spawn(move || {
-        let buf = BufReader::new(reader);
-        for line in buf.lines() {
-            match line {
-                Ok(line) => {
-                    let _ = tx.send(format!("{line}\n"));
-                }
-                Err(err) => {
-                    let _ = tx.send(format!("<<failed to read output: {err}>>\n"));
-                    break;
-                }
-            }
-        }
-    });
 }
 
 struct BuildWindowApp {
     project_name: String,
-    output: String,
-    process: Option<RunningProcess>,
+    terminal_backend: TerminalBackend,
+    pty_event_rx: Receiver<(u64, PtyEvent)>,
     final_result: Arc<Mutex<Option<BuildOutcome>>>,
     failure_code: Option<i32>,
+    build_exited: bool,
 }
 
 impl BuildWindowApp {
     fn new(
         project_name: String,
-        initial_output: String,
-        process: RunningProcess,
+        session: BuildTerminalSession,
+        initial_failure_code: Option<i32>,
         final_result: Arc<Mutex<Option<BuildOutcome>>>,
     ) -> Self {
-        Self {
+        let BuildTerminalSession {
+            terminal_backend,
+            pty_event_rx,
+        } = session;
+        let app = Self {
             project_name,
-            output: initial_output,
-            process: Some(process),
+            terminal_backend,
+            pty_event_rx,
             final_result,
-            failure_code: None,
+            failure_code: initial_failure_code,
+            build_exited: initial_failure_code.is_some(),
+        };
+        if let Some(code) = initial_failure_code {
+            app.set_result_once(BuildOutcome::Failed(code));
         }
+        app
     }
 
     fn set_result_once(&self, outcome: BuildOutcome) {
@@ -464,74 +470,78 @@ impl BuildWindowApp {
 
 impl Drop for BuildWindowApp {
     fn drop(&mut self) {
-        if let Some(process) = self.process.as_mut() {
-            let _ = process.child.kill();
-            let _ = process.child.wait();
-            self.set_result_once(BuildOutcome::Aborted);
-        }
+        self.set_result_once(BuildOutcome::Aborted);
     }
 }
 
 impl eframe::App for BuildWindowApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Some(process) = self.process.as_mut() {
-            while let Ok(chunk) = process.output_rx.try_recv() {
-                self.output.push_str(&chunk);
-            }
-
-            match process.child.try_wait() {
-                Ok(Some(status)) => {
-                    let code = exit_code(status);
-                    if status.success() {
+        let close_requested = ctx.input(|input| input.viewport().close_requested());
+        while let Ok((_, event)) = self.pty_event_rx.try_recv() {
+            match event {
+                PtyEvent::ChildExit(code) => {
+                    self.build_exited = true;
+                    if code == 0 {
                         self.set_result_once(BuildOutcome::Succeeded);
-                        self.process = None;
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     } else {
                         self.failure_code = Some(code);
                         self.set_result_once(BuildOutcome::Failed(code));
-                        self.process = None;
                     }
                 }
-                Ok(None) => {}
-                Err(err) => {
-                    self.output
-                        .push_str(&format!("<<failed while waiting for build: {err}>>\n"));
+                PtyEvent::Exit if !self.build_exited && !close_requested => {
+                    self.build_exited = true;
                     self.failure_code = Some(-1);
                     self.set_result_once(BuildOutcome::Failed(-1));
-                    self.process = None;
                 }
+                _ => {}
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical()
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut self.output)
-                            .font(egui::TextStyle::Monospace)
-                            .desired_width(f32::INFINITY)
-                            .interactive(false),
+        egui::TopBottomPanel::bottom("build_status").show(ctx, |ui| {
+            let row_height = ui.spacing().interact_size.y;
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), row_height),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    if let Some(code) = self.failure_code {
+                        ui.label(RichText::new("X").color(Color32::RED).strong());
+                        ui.label(
+                            RichText::new(format!(
+                                "Build {} exited with code {}.",
+                                self.project_name, code
+                            ))
+                            .color(Color32::RED),
+                        );
+                    } else {
+                        ui.add(egui::Spinner::new());
+                        ui.label(format!("Building {}...", self.project_name));
+                    }
+
+                    let remaining = ui.available_size_before_wrap();
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(remaining.x.max(0.0), row_height),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if self.failure_code.is_some() {
+                                if ui.button("Close").clicked() {
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                }
+                            } else if !self.build_exited && ui.button("Cancel").clicked() {
+                                self.terminal_backend
+                                    .process_command(BackendCommand::Write(vec![3]));
+                            }
+                        },
                     );
-                });
+                },
+            );
         });
 
-        egui::TopBottomPanel::bottom("build_status").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if let Some(code) = self.failure_code {
-                    ui.label(RichText::new("X").color(Color32::RED).strong());
-                    ui.label(
-                        RichText::new(format!(
-                            "Build {} exited with code {}.",
-                            self.project_name, code
-                        ))
-                        .color(Color32::RED),
-                    );
-                } else {
-                    ui.add(egui::Spinner::new());
-                    ui.label(format!("Building {}...", self.project_name));
-                }
-            });
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let terminal = TerminalView::new(ui, &mut self.terminal_backend)
+                .set_focus(true)
+                .set_size(ui.available_size());
+            ui.add(terminal);
         });
 
         ctx.request_repaint_after(Duration::from_millis(50));
