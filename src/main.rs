@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt;
-use std::fs;
-use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -14,7 +13,7 @@ use color_eyre::eyre::{Context, Result, bail, eyre};
 use eframe::egui::{self, Color32, RichText};
 use egui_term::{BackendCommand, BackendSettings, PtyEvent, TerminalBackend, TerminalView};
 use serde_json::Value;
-use tempfile::NamedTempFile;
+use tempfile::tempfile;
 
 fn main() {
     if let Err(err) = run() {
@@ -341,12 +340,11 @@ fn run_task_with_quick_failure_capture(
     project: &Path,
     run_task: &str,
 ) -> Result<Option<QuickRunFailure>> {
-    let output_file = NamedTempFile::new().wrap_err("Failed to create temporary output file")?;
-    let stdout_file = OpenOptions::new()
-        .append(true)
-        .open(output_file.path())
-        .wrap_err("Failed to open temp output file for stdout")?;
-    let stderr_file = stdout_file
+    let mut output_file = tempfile().wrap_err("Failed to create temporary output file")?;
+    let stdout_file = output_file
+        .try_clone()
+        .wrap_err("Failed to clone temp output file for stdout")?;
+    let stderr_file = output_file
         .try_clone()
         .wrap_err("Failed to clone temp output file for stderr")?;
 
@@ -369,7 +367,9 @@ fn run_task_with_quick_failure_capture(
                 return Ok(None);
             }
 
-            let output = fs::read_to_string(output_file.path()).unwrap_or_default();
+            let mut output = String::new();
+            let _ = output_file.seek(SeekFrom::Start(0));
+            let _ = output_file.read_to_string(&mut output);
             return Ok(Some(QuickRunFailure {
                 exit_code: exit_code(status),
                 output,
