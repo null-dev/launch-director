@@ -141,10 +141,9 @@ impl eframe::App for ErrorDialogApp {
 
             ui.add_sized(
                 ui.available_size(),
-                egui::TextEdit::multiline(&mut self.message)
+                egui::TextEdit::multiline(&mut self.message.as_str())
                     .font(egui::TextStyle::Monospace)
-                    .desired_width(f32::INFINITY)
-                    .interactive(false),
+                    .desired_width(f32::INFINITY),
             );
         });
     }
@@ -589,10 +588,9 @@ impl eframe::App for FailureWindowApp {
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     ui.add(
-                        egui::TextEdit::multiline(&mut self.output)
+                        egui::TextEdit::multiline(&mut self.output.as_str())
                             .font(egui::TextStyle::Monospace)
-                            .desired_width(f32::INFINITY)
-                            .interactive(false),
+                            .desired_width(f32::INFINITY),
                     );
                 });
         });
