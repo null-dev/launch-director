@@ -54,11 +54,13 @@ fn run() -> Result<()> {
 fn show_error_dialog(message: &str) {
     let title = "Launch Director - Error";
     let app = ErrorDialogApp::new(message.to_string());
-    let _ = eframe::run_native(
-        title,
-        eframe::NativeOptions::default(),
-        Box::new(|_cc| Ok(Box::new(app))),
-    );
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([760.0, 240.0])
+            .with_min_inner_size([520.0, 180.0]),
+        ..Default::default()
+    };
+    let _ = eframe::run_native(title, native_options, Box::new(|_cc| Ok(Box::new(app))));
 }
 
 fn parse_args() -> Result<CliArgs> {
@@ -86,23 +88,25 @@ impl ErrorDialogApp {
 
 impl eframe::App for ErrorDialogApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::bottom("error_dialog_controls").show(ctx, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Close").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label(RichText::new("Launch Director encountered an error:").strong());
             ui.separator();
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.message)
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(f32::INFINITY)
-                        .interactive(false),
-                );
-            });
-
-            ui.separator();
-            if ui.button("Close").clicked() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
+            ui.add_sized(
+                ui.available_size(),
+                egui::TextEdit::multiline(&mut self.message)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(f32::INFINITY)
+                    .interactive(false),
+            );
         });
     }
 }
