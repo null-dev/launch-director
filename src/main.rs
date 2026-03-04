@@ -395,11 +395,14 @@ impl eframe::App for BuildWindowApp {
 
         egui::TopBottomPanel::bottom("build_status").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if self.failure_code.is_some() {
+                if let Some(code) = self.failure_code {
                     ui.label(RichText::new("X").color(Color32::RED).strong());
                     ui.label(
-                        RichText::new(format!("Building {}...", self.project_name))
-                            .color(Color32::RED),
+                        RichText::new(format!(
+                            "Build {} exited with code {}.",
+                            self.project_name, code
+                        ))
+                        .color(Color32::RED),
                     );
                 } else {
                     ui.add(egui::Spinner::new());
