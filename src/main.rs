@@ -170,14 +170,11 @@ fn run_build_window(project: &Path, project_name: &str) -> Result<BuildOutcome> 
     let result = Arc::new(Mutex::new(None));
     let result_for_ui = Arc::clone(&result);
     let app = BuildWindowApp::new(project_name.to_string(), process, result_for_ui);
+    let title = format!("Launch Director - {project_name} - Build");
 
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "Launch Director - Build",
-        native_options,
-        Box::new(|_cc| Ok(Box::new(app))),
-    )
-    .map_err(|err| eyre!("Failed to open build output window: {err}"))?;
+    eframe::run_native(&title, native_options, Box::new(|_cc| Ok(Box::new(app))))
+        .map_err(|err| eyre!("Failed to open build output window: {err}"))?;
 
     let final_result = result
         .lock()
@@ -239,13 +236,10 @@ fn run_task_with_quick_failure_capture(project: &Path) -> Result<Option<QuickRun
 
 fn show_run_failure_window(project_name: &str, exit_code: i32, output: &str) -> Result<()> {
     let app = FailureWindowApp::new(project_name.to_string(), exit_code, output.to_string());
+    let title = format!("Launch Director - {project_name} - Run Failure");
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "Launch Director - Run Failure",
-        native_options,
-        Box::new(|_cc| Ok(Box::new(app))),
-    )
-    .map_err(|err| eyre!("Failed to open run failure window: {err}"))?;
+    eframe::run_native(&title, native_options, Box::new(|_cc| Ok(Box::new(app))))
+        .map_err(|err| eyre!("Failed to open run failure window: {err}"))?;
 
     Ok(())
 }
