@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="e">
+      <rect width="320" height="48" x="96" y="190" rx="8"/>
+    </clipPath>
+    <clipPath id="f">
+      <rect width="320" height="48" x="-24" y="-48" rx="8"/>
+    </clipPath>
+    <rect id="a" width="320" height="48" x="96" y="190" rx="8"/>
+    <rect id="b" width="320" height="48" x="-24" y="-48" rx="8"/>
+    <linearGradient id="c" x1="0" x2="0" y1="0" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <filter id="d" width="120%" height="130%" x="-10%" y="-10%">
+      <feDropShadow dx="0" dy="16" flood-color="#000" flood-opacity=".6" stdDeviation="20"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#c)" rx="115"/>
+  <rect width="510" height="510" x="1" y="1" fill="none" stroke="#fff" stroke-width="1.5" opacity=".1" rx="114"/>
+  <rect width="512" height="512" fill="none" stroke="#000" stroke-width="4" opacity=".4" rx="115"/>
+  <g filter="url(#d)">
+    <rect width="288" height="180" x="112" y="246" fill="#020617" rx="16"/>
+    <rect width="288" height="180" x="112" y="246" fill="none" stroke="#334155" stroke-width="4" rx="16"/>
+    <g transform="translate(135 275)">
+      <path fill="none" stroke="#22c55e" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m0 0 10 10L0 20"/>
+      <path stroke="#22c55e" stroke-linecap="round" stroke-width="3" d="M15 20h12"/>
+      <rect width="60" height="6" x="37" y="7" fill="#475569" rx="3"/>
+      <rect width="80" height="6" y="35" fill="#475569" rx="3"/>
+      <rect width="40" height="6" y="55" fill="#334155" rx="3"/>
+    </g>
+    <g transform="matrix(1.06066, 1.06066, -1.06066, 1.06066, 382.161133, 346.44339)">
+      <g transform="matrix(1, 0, 0, 1, -7.197896, -8.713242)">
+        <path fill="#ef4444" d="M -44.217 50.592 C -44.217 73.592 -52.217 93.592 -32.217 113.592 C -12.217 93.592 -20.217 73.592 -20.217 50.592 L -44.217 50.592 Z" opacity=".6"/>
+        <path fill="#fde047" d="M -38.217 50.592 C -38.217 63.592 -42.217 78.592 -32.217 93.592 C -22.217 78.592 -26.217 63.592 -26.217 50.592 L -38.217 50.592 Z"/>
+        <path fill="#475569" d="M -42.217 38.592 L -22.217 38.592 L -18.217 50.592 L -46.217 50.592 L -42.217 38.592 Z"/>
+        <path fill="#94a3b8" d="M -48.217 23.592 L -60.217 53.592 L -44.217 48.592 L -48.217 38.592 L -48.217 23.592 Z M -16.217 23.592 L -4.217 53.592 L -20.217 48.592 L -16.217 38.592 L -16.217 23.592 Z"/>
+        <path fill="#f8fafc" d="M -32.217 -36.408 C -16.217 -11.408 -16.217 18.592 -16.217 38.592 L -48.217 38.592 C -48.217 18.592 -48.217 -11.408 -32.217 -36.408"/>
+        <circle cy="3.592" r="7" fill="#020617" stroke="#38bdf8" stroke-width="3" cx="-32.217"/>
+      </g>
+    </g>
+    <rect width="320" height="48" x="96" y="190" rx="8" fill="#0f172a"/>
+    <g fill="#f8fafc" clip-path="url(#e)">
+      <path d="M236 238h30l24-48h-30zm60 0h30l24-48h-30zm60 0h30l24-48h-30z"/>
+    </g>
+    <circle cx="150" cy="214" r="6" fill="#ef4444"/>
+    <circle cx="174" cy="214" r="6" fill="#f59e0b"/>
+    <circle cx="198" cy="214" r="6" fill="#10b981"/>
+    <rect width="320" height="48" x="96" y="190" rx="8" fill="none" stroke="#334155" stroke-width="4"/>
+    <g transform="rotate(-25 488.517 -175.643)">
+      <rect width="320" height="48" x="-24" y="-48" rx="8" fill="#0f172a"/>
+      <g fill="#f8fafc" clip-path="url(#f)">
+        <path d="M-40 0h30l24-48h-30zm60 0h30l24-48H44zm60 0h30l24-48h-30zm60 0h30l24-48h-30zm60 0h30l24-48h-30zm60 0h30l24-48h-30zm60 0h30l24-48h-30z"/>
+      </g>
+      <rect width="320" height="48" x="-24" y="-48" rx="8" fill="none" stroke="#334155" stroke-width="4"/>
+    </g>
+    <circle cx="120" cy="190" r="12" fill="#1e293b" stroke="#0f172a" stroke-width="4"/>
+    <circle cx="120" cy="190" r="4" fill="#94a3b8"/>
+  </g>
+</svg>
