@@ -8,6 +8,8 @@ eyre = "0.6"
 color-eyre = "0.6"
 eframe = "0.33"
 egui_term = { git = "https://github.com/Harzu/egui_term", rev = "91b03bcdaed5d15e6fa00259d30355fe4eddcdb8" }
+serde_json = "1.0"
+tempfile = "3.23"
 
 [profile.dev]
 split-debuginfo = "unpacked"
