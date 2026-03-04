@@ -113,7 +113,7 @@ impl eframe::App for ErrorDialogApp {
     }
 }
 
-/// Launch and monitor locally developed programs via project-defined `mise` tasks.
+/// Launch and monitor locally developed programs via project-defined `mise` tasks, showing build output UI only for builds longer than 2s.
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct CliArgs {
@@ -255,10 +255,40 @@ enum BuildOutcome {
 }
 
 fn run_build_window(project: &Path, project_name: &str, build_task: &str) -> Result<BuildOutcome> {
-    let process = RunningProcess::spawn(project, build_task)?;
+    let mut process = RunningProcess::spawn(project, build_task)?;
+    let mut initial_output = String::new();
+    let start = Instant::now();
+
+    loop {
+        process.drain_output(&mut initial_output);
+
+        if let Some(status) = process
+            .child
+            .try_wait()
+            .wrap_err_with(|| format!("Failed while waiting for `{build_task}`"))?
+        {
+            return if status.success() {
+                Ok(BuildOutcome::Succeeded)
+            } else {
+                Ok(BuildOutcome::Failed(exit_code(status)))
+            };
+        }
+
+        if start.elapsed() >= Duration::from_secs(2) {
+            break;
+        }
+
+        thread::sleep(Duration::from_millis(50));
+    }
+
     let result = Arc::new(Mutex::new(None));
     let result_for_ui = Arc::clone(&result);
-    let app = BuildWindowApp::new(project_name.to_string(), process, result_for_ui);
+    let app = BuildWindowApp::new(
+        project_name.to_string(),
+        initial_output,
+        process,
+        result_for_ui,
+    );
     let title = format!("Launch Director - {project_name} - Build");
 
     let native_options = eframe::NativeOptions::default();
@@ -374,6 +404,12 @@ impl RunningProcess {
             output_rx: rx,
         })
     }
+
+    fn drain_output(&mut self, output: &mut String) {
+        while let Ok(chunk) = self.output_rx.try_recv() {
+            output.push_str(&chunk);
+        }
+    }
 }
 
 fn spawn_reader<R: Read + Send + 'static>(reader: R, tx: Sender<String>) {
@@ -404,12 +440,13 @@ struct BuildWindowApp {
 impl BuildWindowApp {
     fn new(
         project_name: String,
+        initial_output: String,
         process: RunningProcess,
         final_result: Arc<Mutex<Option<BuildOutcome>>>,
     ) -> Self {
         Self {
             project_name,
-            output: String::new(),
+            output: initial_output,
             process: Some(process),
             final_result,
             failure_code: None,

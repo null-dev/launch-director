@@ -18,7 +18,7 @@ Given a project directory, Launch Director:
 1. Resolves build/run `mise` tasks with this priority:
    - Build: `_launch_director_build`, then `build`
    - Run: `_launch_director_run`, then `run`
-2. Runs the build task and displays the build output.
+2. Starts the build task immediately. If it runs longer than 2 seconds, a build window opens and streams build output.
 3. If build succeeds, Launch Director will launch the program using the run task.
 4. If the program crashes instantly (within 2 seconds), a failure window will be shown.
 
