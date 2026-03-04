@@ -1,0 +1,13 @@
+[package]
+name = "launch-director"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eyre = "0.6"
+color-eyre = "0.6"
+eframe = "0.33"
+egui_term = { git = "https://github.com/Harzu/egui_term", rev = "91b03bcdaed5d15e6fa00259d30355fe4eddcdb8" }
+
+[profile.dev]
+split-debuginfo = "unpacked"
