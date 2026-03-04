@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::env;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read};
@@ -10,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use clap::Parser;
 use color_eyre::eyre::{Context, Result, bail, eyre};
 use eframe::egui::{self, Color32, RichText};
 use serde_json::Value;
@@ -18,7 +18,7 @@ use tempfile::NamedTempFile;
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let args = CliArgs::parse()?;
+    let args = CliArgs::parse();
     ensure_required_tasks(&args.project)?;
     let project_name = project_display_name(&args.project);
 
@@ -43,30 +43,24 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug)]
+/// Launch and monitor locally developed programs via project-defined `mise` tasks.
+#[derive(Debug, Parser)]
+#[command(version, about, long_about = None)]
 struct CliArgs {
+    /// Project directory that defines `_launch_director_build` and `_launch_director_run` tasks.
+    #[arg(short, long, value_name = "PATH", value_parser = parse_project_dir)]
     project: PathBuf,
 }
 
-impl CliArgs {
-    fn parse() -> Result<Self> {
-        let mut args = env::args().skip(1);
-        let parsed = match (args.next(), args.next(), args.next()) {
-            (Some(flag), Some(project), None) if flag == "--project" || flag == "-p" => Self {
-                project: PathBuf::from(project),
-            },
-            _ => bail!("Usage: launch-director (--project|-p) /path/to/project"),
-        };
-
-        if !parsed.project.is_dir() {
-            bail!(
-                "Project path '{}' is not a directory.",
-                parsed.project.display()
-            );
-        }
-
-        Ok(parsed)
+fn parse_project_dir(value: &str) -> std::result::Result<PathBuf, String> {
+    let path = PathBuf::from(value);
+    if !path.is_dir() {
+        return Err(format!(
+            "Project path '{}' is not a directory.",
+            path.display()
+        ));
     }
+    Ok(path)
 }
 
 fn project_display_name(project: &Path) -> String {
