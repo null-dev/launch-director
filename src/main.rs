@@ -27,16 +27,18 @@ fn run() -> Result<()> {
     color_eyre::install()?;
 
     let args = parse_args()?;
-    ensure_required_tasks(&args.project)?;
+    let tasks = resolve_project_tasks(&args.project)?;
     let project_name = project_display_name(&args.project);
 
-    match run_build_window(&args.project, &project_name)? {
+    match run_build_window(&args.project, &project_name, &tasks.build_task)? {
         BuildOutcome::Succeeded => {}
         BuildOutcome::Failed(code) => bail!("Build task failed with exit code {code}."),
         BuildOutcome::Aborted => bail!("Build window was closed before the build finished."),
     }
 
-    if let Some(quick_failure) = run_task_with_quick_failure_capture(&args.project)? {
+    if let Some(quick_failure) =
+        run_task_with_quick_failure_capture(&args.project, &tasks.run_task)?
+    {
         show_run_failure_window(
             &project_name,
             quick_failure.exit_code,
@@ -115,7 +117,7 @@ impl eframe::App for ErrorDialogApp {
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct CliArgs {
-    /// Project directory that defines `_launch_director_build` and `_launch_director_run` tasks.
+    /// Project directory with `mise` tasks: prefer `_launch_director_build`/`_launch_director_run`, fall back to `build`/`run`.
     #[arg(short, long, value_name = "PATH", value_parser = parse_project_dir)]
     project: PathBuf,
 }
@@ -139,20 +141,40 @@ fn project_display_name(project: &Path) -> String {
         .unwrap_or_else(|| project.display().to_string())
 }
 
-fn ensure_required_tasks(project: &Path) -> Result<()> {
+struct ProjectTasks {
+    build_task: String,
+    run_task: String,
+}
+
+fn resolve_project_tasks(project: &Path) -> Result<ProjectTasks> {
     let tasks = list_mise_tasks(project)?;
-    for required in ["_launch_director_build", "_launch_director_run"] {
-        if !tasks.contains(required) {
-            let mut sorted: Vec<_> = tasks.into_iter().collect();
-            sorted.sort();
-            bail!(
-                "Required task '{}' not found. Discovered tasks: {}",
-                required,
-                sorted.join(", ")
-            );
+    let build_task = resolve_task_name(&tasks, &["_launch_director_build", "build"], "build")?;
+    let run_task = resolve_task_name(&tasks, &["_launch_director_run", "run"], "run")?;
+    Ok(ProjectTasks {
+        build_task,
+        run_task,
+    })
+}
+
+fn resolve_task_name(
+    tasks: &HashSet<String>,
+    candidates: &[&str],
+    task_kind: &str,
+) -> Result<String> {
+    for candidate in candidates {
+        if tasks.contains(*candidate) {
+            return Ok((*candidate).to_string());
         }
     }
-    Ok(())
+
+    let mut sorted: Vec<_> = tasks.iter().cloned().collect();
+    sorted.sort();
+    bail!(
+        "Could not find a {} task. Define one of: {}. Discovered tasks: {}",
+        task_kind,
+        candidates.join(", "),
+        sorted.join(", ")
+    );
 }
 
 fn list_mise_tasks(project: &Path) -> Result<HashSet<String>> {
@@ -175,7 +197,12 @@ fn list_mise_tasks(project: &Path) -> Result<HashSet<String>> {
     collect_task_names(&value, &mut names);
 
     if names.is_empty() {
-        for name in ["_launch_director_build", "_launch_director_run"] {
+        for name in [
+            "_launch_director_build",
+            "_launch_director_run",
+            "build",
+            "run",
+        ] {
             if raw.contains(&format!("\"{name}\"")) {
                 names.insert(name.to_string());
             }
@@ -227,8 +254,8 @@ enum BuildOutcome {
     Aborted,
 }
 
-fn run_build_window(project: &Path, project_name: &str) -> Result<BuildOutcome> {
-    let process = RunningProcess::spawn(project, "_launch_director_build")?;
+fn run_build_window(project: &Path, project_name: &str, build_task: &str) -> Result<BuildOutcome> {
+    let process = RunningProcess::spawn(project, build_task)?;
     let result = Arc::new(Mutex::new(None));
     let result_for_ui = Arc::clone(&result);
     let app = BuildWindowApp::new(project_name.to_string(), process, result_for_ui);
@@ -252,7 +279,10 @@ struct QuickRunFailure {
     output: String,
 }
 
-fn run_task_with_quick_failure_capture(project: &Path) -> Result<Option<QuickRunFailure>> {
+fn run_task_with_quick_failure_capture(
+    project: &Path,
+    run_task: &str,
+) -> Result<Option<QuickRunFailure>> {
     let output_file = NamedTempFile::new().wrap_err("Failed to create temporary output file")?;
     let stdout_file = OpenOptions::new()
         .append(true)
@@ -264,18 +294,18 @@ fn run_task_with_quick_failure_capture(project: &Path) -> Result<Option<QuickRun
 
     let mut child = Command::new("mise")
         .arg("run")
-        .arg("_launch_director_run")
+        .arg(run_task)
         .current_dir(project)
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .spawn()
-        .wrap_err("Failed to launch `_launch_director_run` task")?;
+        .wrap_err_with(|| format!("Failed to launch `{run_task}` task"))?;
 
     let start = Instant::now();
     loop {
         if let Some(status) = child
             .try_wait()
-            .wrap_err("Failed while waiting for `_launch_director_run`")?
+            .wrap_err_with(|| format!("Failed while waiting for `{run_task}`"))?
         {
             if status.success() {
                 return Ok(None);

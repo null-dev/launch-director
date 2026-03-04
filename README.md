@@ -15,7 +15,9 @@
 
 Given a project directory, Launch Director:
 
-1. Verifies that the project exposes a run and build `mise` tasks.
+1. Resolves build/run `mise` tasks with this priority:
+   - Build: `_launch_director_build`, then `build`
+   - Run: `_launch_director_run`, then `run`
 2. Runs the build task and displays the build output.
 3. If build succeeds, Launch Director will launch the program using the run task.
 4. If the program crashes instantly (within 2 seconds), a failure window will be shown.
@@ -25,8 +27,10 @@ Given a project directory, Launch Director:
 - Rust toolchain (for building Launch Director)
 - `mise` installed and available on `PATH`
 - A target project directory with a `mise.toml` that defines:
-  - `_launch_director_build`
-  - `_launch_director_run`
+  - Build task: `_launch_director_build` or `build`
+  - Run task: `_launch_director_run` or `run`
+
+If both variants exist, Launch Director prefers `_launch_director_*`.
 
 ## Usage
 
