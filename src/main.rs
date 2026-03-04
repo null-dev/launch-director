@@ -52,10 +52,10 @@ impl CliArgs {
     fn parse() -> Result<Self> {
         let mut args = env::args().skip(1);
         let parsed = match (args.next(), args.next(), args.next()) {
-            (Some(flag), Some(project), None) if flag == "--project" => Self {
+            (Some(flag), Some(project), None) if flag == "--project" || flag == "-p" => Self {
                 project: PathBuf::from(project),
             },
-            _ => bail!("Usage: launch-director --project /path/to/project"),
+            _ => bail!("Usage: launch-director (--project|-p) /path/to/project"),
         };
 
         if !parsed.project.is_dir() {
